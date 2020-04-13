@@ -14,12 +14,13 @@ import redis
 import requests
 from pyquery import PyQuery as pq
 from data_saver import RedisClient
+from concurrent.futures.thread import ThreadPoolExecutor
 
 CONN = RedisClient('ccgp', 'd_link')
 CONN1 = RedisClient('ccgp', 'filter_link')
 CONN2 = RedisClient('ccgp', 'd_uuid')
 URL = 'http://htgs.ccgp.gov.cn/GS8/contractpublish/detail/2c8382aa5513c90301551589cd7c0224?contractSign=0'
-URL_LIST = CONN1.scan()
+
 
 # URL = 'http://htgs.ccgp.gov.cn/GS8/contractpublish/detail/2c8382a96dcec594016e8cc65d0458e2?contractSign=0'
 
@@ -71,39 +72,57 @@ class reqpager( ):
             encoding = chardet.detect(res.content)
             html = res.content.decode(encoding['encoding'], 'ignore')
             print('return html....')
+            self.parse_page(html)
             # print(html)
-            return html
+            # return html
         except ConnectionError:
             print('Connection timeout...')
 
-    def parse_page(self, content):
-        doc = pq(content)
-        context = doc('tr td').text()
+    def parse_title_date(self,context):
         cs = context.split( )
-        jsonarr = json.dumps(cs, ensure_ascii = False)
-        print(cs)
-        print(type(cs))
-        print(jsonarr)
-        # info = context.items()
-        # print(info)
-        # for i in info:
-        #     print(i)
-        # print(context)
-        # info = doc('.fileInfo div a')
-        # print(info)
-        # for i in info.items( ):
-        #     if i.attr('onclick') != None:
-        #         # print(i.attr('onclick'))
-        #         t = i.attr('onclick')
-        #         pattern = re.compile(r"'(\S.*?-.*?-.*?\S)',")
-        #         r = pattern.findall(str(t))
-        #         # CONN2.set('')
-        #         print(r)
-        #     else:
-        #         print('[ERROR]uuid requirment failed.')
+        pattern = re.compile(r'\d\d\d\d-\d\d-\d\d')
+        r = pattern.findall(context)
+        title = r[0]+cs[3]
+        print(title)
+        return title
+
+    def parse_page(self,content):
+        try:
+            doc = pq(content)
+            context = doc('tr td').text()
+            title = self.parse_title_date(context)
+            # jsonarr = json.dumps(cs, ensure_ascii = False)
+            # self.parse_date(context)
+            # print(type(cs))
+            # print(jsonarr)
+            # info = context.items()
+            # print(info)
+            # for i in info:
+            #     print(i)
+            # print(context)
+            info = doc('.fileInfo div a')
+            # print(info)
+            for i in info.items( ):
+                if i.attr('onclick') != None:
+                    # print(i.attr('onclick'))
+                    t = i.attr('onclick')
+                    pattern = re.compile(r"'(\S.*?-.*?-.*?\S)',")
+                    r = pattern.findall(str(t))
+                    CONN2.set(title, r[0])
+                    print(r[0])
+                else:
+                    print('[ERROR]uuid requesting failed...')
+        except Exception as e:
+            print(e)
+
+    def job(self):
+        start=time.time()
+        URL_LIST = CONN1.scan()
+        u_num = CONN1.count()
+        with ThreadPoolExecutor(max_workers = 32) as executor:
+            executor.map(self.page_req, URL_LIST)
 
 
-rq = reqpager( )
-# for url in URL_LIST:
-ct = rq.page_req(URL)
-rq.parse_page(ct)
+rq = reqpager()
+rq.job()
+
