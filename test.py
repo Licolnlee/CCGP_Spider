@@ -137,7 +137,7 @@ class reqpager( ):
             print(e)
 
     def job(self):
-        start=time.time()
+        # start=time.time()
         URL_LIST = CONN1.scan()
         u_num = CONN1.count()
         with ThreadPoolExecutor(max_workers = 32) as executor:

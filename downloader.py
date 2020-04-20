@@ -6,6 +6,7 @@ import re
 import sys
 import threading
 import time
+from concurrent.futures.process import ProcessPoolExecutor
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 
@@ -231,17 +232,24 @@ class downloader( ):
             print('[ERROR]Proxy Connection Timouterror...')
             self.file_download( )
 
-    def parallel_download(self):
+    def parallel_download(self,i):
         try:
-            for i in range(2):
-                self.key = self.key_list[i]
-                self.uuid = CONN.get(self.key)
-                print(self.key)
-                # print(self.uuid)
-                self.file_download( )
+            # for i in range(2):
+            self.key = self.key_list[i]
+            self.uuid = CONN.get(self.key)
+            print(self.key)
+            # print(self.uuid)
+            self.file_download( )
         except Exception as e:
             print(e)
 
+    def job(self):
+        thread_pool = ThreadPoolExecutor(5)
+        process_pool = ProcessPoolExecutor(5)
+        # with ThreadPoolExecutor(max_workers = 32) as executor:
+        #     executor.map(self.parallel_download, i)
+        for i in range(20):
+            thread_pool.submit(self.parallel_download,i)
 
 dl = downloader( )
-dl.parallel_download( )
+dl.job()
