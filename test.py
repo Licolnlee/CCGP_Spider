@@ -56,6 +56,7 @@ URL = 'http://htgs.ccgp.gov.cn/GS8/contractpublish/detail/2c8382aa5513c903015515
 #     'code': '9w6s'
 # }
 
+proxy_pool_url = 'http://127.0.0.1:5010/get'
 
 class reqpager( ):
     def __init__(self):
@@ -63,12 +64,32 @@ class reqpager( ):
         # self.headers = Headers
         # self.data = DATA
 
+    def get_proxy(self):
+        try:
+            response = requests.get(proxy_pool_url)
+            if response.status_code == 200:
+                proxy_url_content = response.content
+                encoding = chardet.detect(proxy_url_content)
+                proxy_url_context = proxy_url_content.decode(encoding['encoding'], 'ignore')
+                proxy_url_context1 = eval(proxy_url_context)
+                proxy_url = proxy_url_context1.get('proxy')
+                print(proxy_url)
+                return proxy_url
+        except ConnectionError:
+            return None
+
     def page_req(self, url):
+        global proxy
         try:
             print(url)
             print("Requsting Pages...")
+            proxy = self.get_proxy( )
+            proxies = {
+                'http': 'http://' + proxy
+            }
+            print(proxies)
             ses = requests.Session( )
-            res = ses.post(url = url, timeout = 10)
+            res = ses.post(url = url, timeout = 10, proxies = proxies)
             encoding = chardet.detect(res.content)
             html = res.content.decode(encoding['encoding'], 'ignore')
             print('return html....')
