@@ -62,6 +62,7 @@ class downloader( ):
         self.url = Base_URL + urlencode(self.data)
         self.key = None
         self.key_list = CONN.usernames( )
+        self.key_num = CONN.count()
         self.uuid_list = CONN.get_alval( )
         self.mime = None
         self.filepath = None
@@ -232,24 +233,20 @@ class downloader( ):
             print('[ERROR]Proxy Connection Timouterror...')
             self.file_download( )
 
-    def parallel_download(self,i):
+    def parallel_download(self, key_list):
         try:
-            # for i in range(2):
-            self.key = self.key_list[i]
-            self.uuid = CONN.get(self.key)
-            print(self.key)
-            # print(self.uuid)
-            self.file_download( )
+            for i in range(self.key_num):
+                self.key = self.key_list[i]
+                self.uuid = CONN.get(self.key)
+                print(self.key)
+                # print(self.uuid)
+                self.file_download( )
         except Exception as e:
             print(e)
 
     def job(self):
-        thread_pool = ThreadPoolExecutor(5)
-        process_pool = ProcessPoolExecutor(5)
-        # with ThreadPoolExecutor(max_workers = 32) as executor:
-        #     executor.map(self.parallel_download, i)
-        for i in range(20):
-            thread_pool.submit(self.parallel_download,i)
+        with ThreadPoolExecutor(max_workers = 1) as executor:
+            executor.map(self.parallel_download, self.key_list)
 
 dl = downloader( )
 dl.job()
