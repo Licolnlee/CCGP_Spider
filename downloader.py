@@ -18,6 +18,8 @@ from pyquery import PyQuery as pq
 from data_saver import RedisClient
 from concurrent.futures.thread import ThreadPoolExecutor
 
+proxy_pool_url = 'http://127.0.0.1:5010/get'
+
 NUM = 16
 CONN = RedisClient('ccgp', 'd_uuid')
 
@@ -27,12 +29,14 @@ r_pool = redis.StrictRedis(connection_pool = pool, charset = 'UTF-8', errors = '
 r_pipe = r_pool.pipeline( )
 
 Base_URL = 'http://www.ccgp.gov.cn/oss/download?'
+Base_DIR = './download/'
 
 
 class downloader( ):
     def __init__(self):
 
         self.temp_size = 0
+        self.total_size = 0
 
         self.headers = {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
@@ -54,39 +58,53 @@ class downloader( ):
         self.data = {
             'uuid': self.uuid
         }
-        self.url = 'http://www.ccgp.gov.cn/oss/download?uuid=76e41277-1549d9608d1-4f44feecf'
+        self.url = Base_URL + urlencode(self.data)
         self.key = None
-        # self.key_list = CONN.usernames( )
-        # self.uuid_list = CONN.get_alval( )
+        self.key_list = CONN.usernames( )
+        self.uuid_list = CONN.get_alval( )
         self.mime = None
+        self.filepath = None
+
+    def get_proxy(self):
+        try:
+            response = requests.get(proxy_pool_url)
+            if response.status_code == 200:
+                proxy_url_content = response.content
+                encoding = chardet.detect(proxy_url_content)
+                proxy_url_context = proxy_url_content.decode(encoding['encoding'], 'ignore')
+                proxy_url_context1 = eval(proxy_url_context)
+                proxy_url = proxy_url_context1.get('proxy')
+                print(proxy_url)
+                return proxy_url
+        except ConnectionError:
+            print('[ERROR]Connection timeout error...')
 
     def mime_judge(self, res):
         try:
             response = res.headers['Content-Disposition']
             pattern = re.compile(r'\.(.*?\S$)')
             r = pattern.findall(response)
+            self.mime = r[0]
             # print(r)
-            print(r[0])
-            return r[0]
+            # print(self.mime)
+            return True
         except IndexError as e:
-            return None
-
-    def get_range(self, total):
-        ranges = []
-        offset = int(total / NUM)
-        for i in range(NUM):
-            if i == NUM - 1:
-                ranges.append((i * offset, ''))
-            else:
-                ranges.append((i * offset, (i + 1) * offset))
-        return ranges
+            print(e)
+            print('[ERROR]check mime error...')
+            return False
 
     def page_req(self, url):
+        global proxy
         try:
             print(url)
             print("Requsting Pages...")
+            proxy = self.get_proxy( )
+            proxies = {
+                'http': 'http://' + proxy
+            }
+            print(proxies)
             ses = requests.Session( )
-            res = ses.get(url = url, timeout = 10)
+            res = ses.get(url = url, timeout = 10, proxies = proxies)
             # mime = self.mime_judge(res)
             # encoding = chardet.detect(res.content)
             # html = res.content.decode(encoding['encoding'], 'ignore')
@@ -99,92 +117,95 @@ class downloader( ):
 
     def size_judge(self, res):
         try:
-            total_size = int(res.headers['content-length'])
-            print(total_size)
-            return total_size
+            self.total_size = int(res.headers['content-length'])
+            # print(self.total_size)
         except Exception as e:
             print(e)
-            return None
+            print('[ERROR]check total_size error...')
 
-    def getContentLength(self):
+    def check_size(self):
         try:
-            response = requests.head(self.url)
-            if response.status_code != 200: return -1
-            return int(response.headers['content-length'])
-        except Exception as e:
-            return None
-
-    def getContent(self, temp_size):
-        try:
-            return requests.get(self.url, headers = {'Range': 'bytes=%d-' % temp_size}).content
-        except:
-            return None
-
-    def check_size(self, file_path):
-        try:
-            if os.path.exists(file_path):
-                self.temp_size = os.path.getsize(file_path)
-                print(self.temp_size)
+            if os.path.exists(self.filepath):
+                self.temp_size = os.path.getsize(self.filepath)
+                # print(self.temp_size)
             else:
-                return 0
+                self.temp_size = 0
         except Exception as e:
             print(e)
-            return 0
+            print('[ERROR]check temp_size error...')
 
-    def downloador(self, file_path, total_size):
+    def file_dl_manager(self, rs):
+        with open(self.filepath, 'ab') as f:
+            start = time.time( )
+            for chunk in rs.iter_content(chunk_size = 1024):
+                if chunk:
+                    self.temp_size += len(chunk)
+                    f.write(chunk)
+                    f.flush( )
+                    done = int(50 * self.temp_size / self.total_size)
+                    sys.stdout.write(
+                        "\r[%s%s] %d%%" % (
+                            '█' * done, ' ' * (50 - done), 100 * self.temp_size / self.total_size))
+                    sys.stdout.flush( )
+            print( )
+            end = time.time( )
+            print('Finish in: ' + str(end - start) + 's')
+
+    def downloador(self):
         try:
-            print(self.temp_size / total_size)
-            if self.temp_size is not None and int(self.temp_size / total_size) is not 1:
-                os.remove(file_path)
+            # print(self.temp_size / self.total_size)
+            if self.temp_size is not None and int(self.temp_size / self.total_size) is not 1:
                 self.temp_size = 0
-                # self.headers.update(Range = str('bytes=%s-%s' % (self.temp_size, total_size)))
-                # print(self.headers)
                 res = requests.Session( )
                 rs = res.get(url = self.url, stream = True)
-                print(rs.headers)
-                with open(file_path, 'ab') as f:
-                    start = time.time( )
-                    for chunk in rs.iter_content(chunk_size = 1024):
-                        if chunk:
-                            self.temp_size += len(chunk)
-                            f.write(chunk)
-                            f.flush( )
-                            done = int(50 * self.temp_size / total_size)
-                            sys.stdout.write(
-                                "\r[%s%s] %d%%" % ('█' * done, ' ' * (50 - done), 100 * self.temp_size / total_size))
-                            sys.stdout.flush( )
-                    print( )  # 避免上面\r 回车符
-                    end = time.time( )
-                    print('Finish in: ', end - start)
+                if os.path.exists(self.filepath):
+                    os.remove(self.filepath)
+                    self.file_dl_manager(rs)
+                else:
+                    self.file_dl_manager(rs)
             else:
                 print("File Already been downloaded...Passing")
                 pass
+        except WindowsError as e:
+            print(e)
+            print('[ERROR]WinError error, failed to check...')
+            pass
+
+    def filepath_generate(self, r):
+        try:
+            if self.mime_judge(r):
+                self.filepath = Base_DIR + self.key + '.' + self.mime
+                # print(self.filepath)
+            else:
+                self.filepath = Base_DIR + self.key
+                # print(self.filepath)
         except Exception as e:
             print(e)
+            print('[ERROR]filepath set error...')
 
     def file_download(self):
+        global proxy
         try:
-            # self.data.update(uuid = self.uuid)
-            # self.url = Base_URL + urlencode(self.data)
+            print("Requsting Pages...")
+            proxy = self.get_proxy( )
+            proxies = {
+                'http': 'http://' + proxy
+            }
+            # print(proxies)
+            self.data.update(uuid = self.uuid)
+            self.url = Base_URL + urlencode(self.data)
+            print(self.url)
             res = requests.Session( )
             r = res.head(self.url)
-            print(r.headers)
-            print(self.url)
-            mime = self.mime_judge(r)
-            print(mime)
-            total_size = self.size_judge(r)
-            print(total_size)
-            if mime is not None:
-                file_path = './download/1.' + mime
-                print(file_path)
-                self.temp_size = self.check_size(file_path)
-                print(self.temp_size)
-                self.downloador(file_path, total_size)
-            else:
-                file_path = './download/1'
-                print(file_path)
-                self.check_size(file_path)
-                self.downloador(file_path, total_size)
+            # print(r.headers)
+            # print(self.url)
+            self.size_judge(r)
+            # print(self.total_size)
+            self.filepath_generate(r)
+            # print(self.filepath)
+            self.check_size( )
+            # print(self.temp_size)
+            self.downloador( )
             # if mime != None:
             #     rs = res.get(self.url, stream = True)
             #     f = open('./download/' + self.key + '.' + mime, 'wb')
@@ -205,20 +226,22 @@ class downloader( ):
             #             f.flush( )
             #     end = time.time( )
             #     print('Finish in: ', end - start)
+        except TimeoutError as e:
+            print(e)
+            print('[ERROR]Proxy Connection Timouterror...')
+            self.file_download( )
+
+    def parallel_download(self):
+        try:
+            for i in range(2):
+                self.key = self.key_list[i]
+                self.uuid = CONN.get(self.key)
+                print(self.key)
+                # print(self.uuid)
+                self.file_download( )
         except Exception as e:
             print(e)
 
-    # def parallel_download(self):
-    #     try:
-    #         for i in range(2):
-    #             # self.key = self.key_list[i]
-    #             # self.uuid = CONN.get(self.key)
-    #             self.file_download( )
-    #             print(self.key)
-    #             print(self.uuid)
-    #     except Exception as e:
-    #         print(e)
-
 
 dl = downloader( )
-dl.file_download()
+dl.parallel_download( )
