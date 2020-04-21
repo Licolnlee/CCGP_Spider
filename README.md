@@ -10,8 +10,8 @@ CCGP_Spider is specified for CCGP Goverment project to acquire information.
 2.Install redis database && graphic manager.
 --- 
   - Install redis.exe and redisDesktopManager.exe which contain in software folder.
-    >+ __installation all using default setting.
-    >+ **DesktopManager->Connect to Redis Server->Connection
+    >+ __installation all using default setting.__
+    >+ **DesktopManager->Connect to Redis Server->Connection**
        >>* __Name:localhost__
        >>* __Host:localhost__
        >>* __Port:6379(default)__
