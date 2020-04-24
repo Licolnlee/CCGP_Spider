@@ -16,7 +16,7 @@ CCGP_Spider is specified for CCGP Goverment project to acquire information.
        >>* __Host:localhost__
        >>* __Port:6379(default)__
        >>* __Auth:default__
-    >+ **Do not forget to test Connection.
+    >+ **Do not forget to test Connection.**
 
 3.Go to csv2redis.py in order to get data into redis.
 ---
